@@ -1,0 +1,39 @@
+sources:
+  urls:
+    - "https://FOO.COW"
+  distros:
+#    fedora:
+#      releases:
+#        latest:
+#          archs:
+#            - amd64
+#            - arm64
+#      glance:
+#        access: public
+    ubuntu:
+      releases:
+        trusty:
+          archs:
+            - arm64
+        latest:
+          archs:
+            - arm64
+      glance:
+          access: public
+
+#    debian:
+#      releases:
+#        latest:
+#          archs:
+#            - amd64
+#            - arm64
+#      glance:
+#        access: public
+#    centos:
+#      releases:
+#        latest:
+#          archs:
+#            - amd64
+#            - arm64
+#      glance:
+#        access: public
