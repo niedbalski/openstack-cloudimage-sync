@@ -20,7 +20,11 @@ sources:
             - arm64
       glance:
           access: public
-
+    debian:
+      releases:
+        latest:
+          archs:
+            - arm64
 #    debian:
 #      releases:
 #        latest:

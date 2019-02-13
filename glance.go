@@ -1,18 +1,17 @@
 package main
 
 import (
+	"fmt"
 	log "github.com/sirupsen/logrus"
-	"gopkg.in/cheggaaa/pb.v1"
 	"gopkg.in/niedbalski/goose.v3/client"
 	"gopkg.in/niedbalski/goose.v3/glance"
 	"gopkg.in/niedbalski/goose.v3/identity"
+	"os"
 )
 
 type GlanceImageUploader struct {
 	Config          *Cloud
 	Client          *glance.Client
-	Results         chan ImageUploadResult
-	ProgressBarPool *pb.Pool
 }
 
 type ImageUploadResult struct {
@@ -50,46 +49,59 @@ func NewGlanceImageUploader(cloudName string, cloudConfigPath string) (*GlanceIm
 
 	newClient.SetRequiredServiceTypes([]string{"image"})
 	newClient.Authenticate()
-	results := make(chan ImageUploadResult)
 
-	pool := pb.NewPool()
-
-	return &GlanceImageUploader{Config: config, Client: glance.New(newClient), ProgressBarPool: pool, Results: results}, nil
+	return &GlanceImageUploader{Config: config, Client: glance.New(newClient)}, nil
 }
 
-func (uploader *GlanceImageUploader) Upload(image *Image) {
-	//imageName := fmt.Sprintf("%s-%s-%s", image.Distro, image.Release, image.Architecture)
-	log.Infof("Uploading image:%s to glance", image.File.Name())
+func (uploader *GlanceImageUploader) HasImage(imageName string) bool {
+	images, err := uploader.Client.ListImagesV2()
+	if err != nil {
+		return false
+	}
 
-	//file, err := os.Open(image.FilePath)
-	//if err != nil {
-	//	*uploader.Results <- FetchResult{Error: err, Image: image}
-	//}
-	//
-	//defer file.Close()
-	//
-	//info, err := file.Stat()
-	//if err != nil {
-	//	*uploader.Results <- FetchResult{Error: err, Image: image}
-	//}
-	//
-	//bar := pb.New(int(info.Size())).SetUnits(pb.U_BYTES)
-	//bar.Start()
-	//reader := bar.NewProxyReader(file)
-	//
-	//_, err = uploader.Client.CreateImageFromFile(reader, glance.ImageOpts{
-	//	Name:            imageName,
-	//	DiskFormat:      "qcow2",
-	//	ContainerFormat: "bare",
-	//	Visibility:      "public",
-	//})
-	//
-	//
-	//if err != nil {
-	//	*uploader.Results <- FetchResult{Error: err, Image: image}
-	//}
-	//
-	//bar.Finish()
-	//image.Uploaded = true
-	//*uploader.Results <- FetchResult{Error: nil, Image: image}
+	for _, image := range images {
+		if image.Name == imageName {
+			return true
+		}
+	}
+	return false
+}
+
+func (uploader *GlanceImageUploader) FilterFetchers(fetchers []ImageFetcher) []ImageFetcher {
+	var filtered []ImageFetcher
+	for _, fetcher := range fetchers {
+		if !uploader.HasImage(fetcher.GetName()) {
+			log.Infof("Adding %s to the list of images to fetch", fetcher.GetName())
+			filtered = append(filtered, fetcher)
+		}
+	}
+	log.Infof("Found %d new images to fetch", len(filtered))
+	return filtered
+}
+
+func (uploader *GlanceImageUploader) Upload(image *Image, errChannel *chan error) {
+	imageName := fmt.Sprintf("%s-%s-%s", image.Distro, image.Release, image.Architecture)
+	log.Infof("Uploading image:%s to glance", imageName)
+
+	file, err := os.Open(image.File.Name())
+	if err != nil {
+		*errChannel <- err
+		return
+	}
+
+	defer file.Close()
+
+	uploadedImage, err := uploader.Client.CreateImageFromFile(file, glance.ImageOpts{
+		Name:            imageName,
+		DiskFormat:      "qcow2",
+		ContainerFormat: "bare",
+		Visibility:      "public",
+	})
+
+	if err != nil {
+		*errChannel <- err
+		return
+	}
+
+	log.Info("Image name: %s, ID: %s - uploaded to glance at %s", uploadedImage.ID, uploadedImage.Name, uploadedImage.UpdatedAt)
 }
